@@ -1,0 +1,186 @@
+﻿package com.odak;
+
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.List;
+
+public class Main {
+    private static String IP = "192.168.1.61";        // machine ip address
+    private static int SERVER_PORT, SLAVE_ADDRESS;             // machine port
+    private final static int STX = 0x02, ETX = 0x03, COMMAND_ID = 0x1D, ESC = 0x1B;
+
+    public static void main(String[] args) {
+        IP = args[0];
+        SERVER_PORT = Integer.parseInt(args[1]);
+        SLAVE_ADDRESS = Integer.parseInt(IP.substring(IP.lastIndexOf('.') + 1 ,IP.length()));
+
+        List<String> data = new ArrayList<>();
+        int size = Arrays.asList(args).size();
+
+        if (size > 2)
+            data.add(args[2]);
+        else
+            data.add("odak test1");
+
+        if (size > 3)
+            data.add(args[3]);
+        else
+            data.add("blackdot2");
+
+        if (size > 4)
+            data.add(args[4]);
+        else
+            data.add("yasin");
+
+        List<Integer> fieldIds = new ArrayList<>();
+        fieldIds.add(135);
+        fieldIds.add(136);
+        fieldIds.add(137);
+
+        sendData(data, fieldIds.size(), fieldIds);
+    }
+
+    private static void sendData(List<String> data, int numberOfFields, List<Integer> fieldId) {
+        Socket s = null;
+        try {
+            // open socket to communicate
+            s = new Socket(IP, SERVER_PORT);
+            sendData(data, numberOfFields, fieldId, s);
+        } catch (UnknownHostException e) {
+            System.out.println("Socket:" + e);
+        } catch (EOFException e) {
+            System.out.println("EOF:" + e);
+        } catch (IOException e) {
+            System.out.println("IO:" + e);
+        } catch (Exception e) {
+            System.out.println("EX:" + e);
+        } finally {
+            if (s != null) {
+                try {
+                    s.close();
+                } catch (IOException e) {
+                    System.out.println("Closing socket failed cause of: " + e);
+                }
+            }
+        }
+    }
+
+    private static void sendData(List<String> data, int numberOfFields, List<Integer> fieldIds, Socket s) throws IOException{
+        int checksum = calculateChecksum(data, numberOfFields, fieldIds);
+
+        // open input stream to read data
+        DataInputStream input = new DataInputStream(s.getInputStream());
+        // open output stream to write data
+        DataOutputStream output = new DataOutputStream(s.getOutputStream());
+        // write data
+        writeData(output, data, checksum, numberOfFields, fieldIds);
+
+        // read reply
+        ArrayList<Byte> digits = new ArrayList<>();
+        do {
+            digits.add(input.readByte());
+        } while (digits.size() < 2 || digits.get(digits.size() - 2) != ESC || digits.get(digits.size() - 1) != ETX);
+
+        // at the end of reply read checksum
+        digits.add(input.readByte());
+
+        printReplyMessage(digits);
+    }
+
+    private static int sumOfIntArr(int[] arr) {
+        int res = 0;
+
+        for (int value : arr) {
+            res += value;
+        }
+
+        return res;
+    }
+
+    private static int[] hexIntArray(String text) {
+        int[] array = new int[text.length()];
+        char[] textCharArr = text.toCharArray();
+
+        for (int i = 0; i < text.length(); i++) {
+            array[i] = Integer.parseInt(toHexadecimal(String.valueOf(textCharArr[i])), 16);
+        }
+
+        return array;
+    }
+
+    private static String toHexadecimal(String text) {
+        byte[] myBytes = text.getBytes(StandardCharsets.UTF_8);
+
+        return HexFormat.of().formatHex(myBytes);
+    }
+
+    private static int calculateChecksum(List<String> data, int numberOfFields, List<Integer> fieldIds) {
+        // calculating check sum
+        // step 1: sum of all bytes in the message
+        int checksum = ESC + ESC + STX + ETX + SLAVE_ADDRESS + COMMAND_ID + numberOfFields;
+
+        for (int i = 0; i < data.size(); i++) {
+            checksum += sumOfIntArr(hexIntArray(data.get(i)));
+            checksum += fieldIds.get(i);
+            checksum += data.get(i).getBytes(StandardCharsets.UTF_8).length;
+        }
+        // step 2: bitwise and operation with 0FFh
+        checksum = checksum & 0x0FF;
+        // step 3: 2s-complement of result
+        checksum = (~checksum) + 1;
+
+        return checksum;
+    }
+
+    private static void writeData(DataOutputStream output, List<String> data, int checksum, int numberOfFields, List<Integer> fieldIds) throws IOException {
+        // WARNING: follow these steps in order !!!
+        output.writeByte(ESC);
+        output.writeByte(STX);
+        output.writeByte(SLAVE_ADDRESS);
+        output.writeByte(COMMAND_ID);
+        output.writeByte(numberOfFields);
+
+        for (int i = 0; i < data.size(); i++) {
+            output.writeByte(fieldIds.get(i));
+            output.writeByte(data.get(i).getBytes(StandardCharsets.UTF_8).length);
+            output.writeBytes(data.get(i));
+        }
+
+        output.writeByte(ESC);
+        output.writeByte(ETX);
+        output.writeByte(checksum);
+
+        System.out.println("Sending.......");
+        output.flush();
+        System.out.println("Sent.......");
+    }
+
+    private static void printReplyMessage(ArrayList<Byte> digits) {
+        switch (digits.get(1)) {
+            case 0x06: {
+                System.out.println("Message was sent successfully");
+            }
+            break;
+            case 0x15: {
+                System.out.println("Message has an error");
+                switch (digits.get(3)) {
+                    case 0x06 -> System.out.println("Invalid command start");
+                    case 0x07 -> System.out.println("Invalid command end");
+                    case 0x08 -> System.out.println("Invalid checksum");
+                    case 0x09 -> System.out.println("Invalid number of field");
+                    case 0x0A -> System.out.println("Invalid module type");
+                    case 0x11 -> System.out.println("Invalid command ID");
+                    case 0x3C -> System.out.println("Invalid print mode");
+                    default -> System.out.println("No idea what is going wrong");
+                }
+            }
+            default:
+                System.out.println("No info");
+                break;
+        }
+    }
+}//end of class
