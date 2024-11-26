@@ -1,5 +1,5 @@
-# Java2VB Socket Program Conversion
-this is an Upwork job which want to convert the existing java socket program to VB.NET.
+# 241009 Java2VB Socket Programming
+convert the existing java socket program to VB.NET.
 
 the solution consists of 3 projects:
 1. Java2VB - the original java code and the VB.NET converted code.
@@ -9,4 +9,5 @@ the solution consists of 3 projects:
 the solution is set to test/debug only 2 projects, ServerSocket (server) and Java2VB (client).
 ![solution setting](./resources/solution_setting.png)
 
-the running demo is here. [demo](https://youtu.be/m5slCPNo5Sw?si=wmceolwQk9jjEkDc)
+# Demo
+the Youtube demo is here. [demo](https://youtu.be/m5slCPNo5Sw?si=wmceolwQk9jjEkDc)
